@@ -1,0 +1,9 @@
+{
+  "name": "BlueprintMirror",
+  "version": "0.0.1",
+  "title": "Blueprint mirror",
+  "author": "Choumiko",
+  "contact": "www.factorioforums.com",
+  "description": "Mirror blueprints",
+  "dependencies": ["base"]
+} 
