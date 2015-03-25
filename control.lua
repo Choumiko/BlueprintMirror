@@ -1,4 +1,3 @@
-
 replaceableEntities = {
   inserter = {
     basic = "basic-inserter",
@@ -114,14 +113,6 @@ function getPlayerByName(name)
   return game.players[id]
 end
 
-function manipulate(name, func, args)
-  local bp = BpMirror.findSetupBlueprintInHotbar(name)
-  if bp then
-    local mir = func(bp, args)
-    bp.setblueprintentities(mir)
-  end
-end
-
 function replace(entities, type, s, r)
   local n = entities
   if not replaceableEntities[type] then
@@ -173,7 +164,7 @@ remote.addinterface("bpmirror",
     mirrorV = function(name)
       local bp = BpMirror.findSetupBlueprintInHotbar(name)
       if bp then
-        local mir = mirror(bp.getblueprintentities, "y")
+        local mir = mirror(bp.getblueprintentities(), "y")
         bp.setblueprintentities(mir)
       end
     end,
@@ -181,7 +172,7 @@ remote.addinterface("bpmirror",
     mirrorH = function(name)
       local bp = BpMirror.findSetupBlueprintInHotbar(name)
       if bp then
-        local mir = mirror(bp.getblueprintentities, "x")
+        local mir = mirror(bp.getblueprintentities(), "x")
         bp.setblueprintentities(mir)
       end
     end,
