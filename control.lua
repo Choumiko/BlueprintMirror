@@ -1,3 +1,5 @@
+require "defines"
+
 replaceableEntities = {
   inserter = {
     basic = "basic-inserter",
@@ -26,6 +28,58 @@ replaceableEntities = {
     express = "express-splitter"
   }
 }
+function initGui(player)
+  if not player.force.technologies["automated-construction"].researched then
+    return
+  end
+
+  if not player.gui.top["blueprintMirror-button"] then
+    player.gui.top.add{type="button", name="blueprintMirror-button", caption="BPmirror"}
+  end
+end
+function expandGui(player)
+  local frame = player.gui.left["blueprintMirror"];
+  if (frame) then
+    frame.destroy();
+  else
+    frame = player.gui.left.add{type="frame", name="blueprintMirror"}
+    frame.add{type="button", name="blueprintMirror-h", caption="horizontal"}
+    frame.add{type="button", name="blueprintMirror-v", caption="vertical"}
+  end
+end
+game.oninit(function()
+  for _, player in pairs(game.players) do
+    initGui(player, false)
+  end
+end)
+game.onload(function()
+  for _, player in pairs(game.players) do
+    initGui(player, false)
+  end
+end)
+
+game.onevent(defines.events.onplayercreated, function(event)
+  initGui(game.players[event.playerindex], false)
+end)
+
+game.onevent(defines.events.onresearchfinished, function(event)
+  if (event.research == "automated-construction") then
+    for _, player in pairs(game.players) do
+      initGui(player, true)
+    end
+  end
+end)
+
+game.onevent(defines.events.onguiclick, function(event) 
+  local player = game.players[event.element.playerindex]
+  if (event.element.name == "blueprintMirror-h") then
+    remote.call("bpmirror", "mirrorH", player.name)
+  elseif (event.element.name == "blueprintMirror-v") then
+    remote.call("bpmirror", "mirrorV", player.name)
+  elseif (event.element.name == "blueprintMirror-button") then
+    expandGui(player)
+  end
+end)
 
 BpMirror = {
   findBlueprintsInHotbar = function(player)
@@ -159,21 +213,78 @@ function printByName(name, msg)
   game.players[1].print(msg)
 end
 
+function getMirroredRecipes(force)
+  local mirrored = {}
+  for i,recipe in pairs(force.recipes) do
+    if  (type(recipe.ingredients) == "table" and recipe.ingredients[1] and recipe.ingredients[1].type) or
+      (type(recipe.products) == "table" and recipe.products[1] and recipe.products[1].type) then
+      local keysIng = {}
+      local keysRes = {}
+      if recipe.ingredients and recipe.ingredients[1].type then
+        for j, ingredient in pairs(recipe.ingredients) do
+          if ingredient.type == defines.recipe.materialtype.fluid then
+            table.insert(keysIng, j)
+          end
+        end
+      end
+      if recipe.products and recipe.products[1].type then
+        for j, result in pairs(recipe.products) do
+          if result.type == defines.recipe.materialtype.fluid then
+            table.insert(keysRes, j)
+          end
+        end
+      end
+      if #keysIng > 1 or #keysRes > 1 then
+        mirrored[recipe.name] = true
+      end
+    end
+  end
+  return mirrored
+end
+
+function endsWith(s, e)
+  return e=='' or string.sub(s,-string.len(e))==e
+end
+
+function mirrorRecipes(entities, recipes)
+  for _, ent in pairs(entities) do
+    if ent.recipe and recipes[ent.recipe] then
+      if endsWith(ent.recipe, "-mirrored") then
+        ent.recipe = string.sub(ent.recipe,1,string.len(ent.recipe)-9)
+        --debugDump(ent.recipe,true)
+      else
+        ent.recipe = ent.recipe.."-mirrored"
+      end
+    end
+  end
+  return entities
+end
+
 remote.addinterface("bpmirror",
   {
     mirrorV = function(name)
-      local bp = BpMirror.findSetupBlueprintInHotbar(name)
-      if bp then
-        local mir = mirror(bp.getblueprintentities(), "y")
-        bp.setblueprintentities(mir)
+      local player = getPlayerByName(name)
+      if player then
+        local force = player.force
+        local bp = BpMirror.findSetupBlueprintInHotbar(name)
+        if bp then
+          local mir = mirror(bp.getblueprintentities(), "y")
+          mir = mirrorRecipes(mir, getMirroredRecipes(force))
+          bp.setblueprintentities(mir)
+        end
       end
     end,
 
     mirrorH = function(name)
-      local bp = BpMirror.findSetupBlueprintInHotbar(name)
-      if bp then
-        local mir = mirror(bp.getblueprintentities(), "x")
-        bp.setblueprintentities(mir)
+      local player = getPlayerByName(name)
+      if player then
+        local force = player.force
+        local bp = BpMirror.findSetupBlueprintInHotbar(name)
+        if bp then
+          local mir = mirror(bp.getblueprintentities(), "x")
+          mir = mirrorRecipes(mir, getMirroredRecipes(force))
+          bp.setblueprintentities(mir)
+        end
       end
     end,
 

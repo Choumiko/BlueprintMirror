@@ -1,19 +1,36 @@
---for name,list in pairs(data.raw) do
---  for index,item in pairs(list) do
---    if item.max_health then
---      if type(item.attack_reaction) ~= "table" then
---        item.attack_reaction = {damage_trigger, attacker_trigger}
---      else
---        table.insert(item.attack_reaction, damage_trigger)
---        table.insert(item.attack_reaction, attacker_trigger)
---      end
---    end
---  end
---end
+
+function reverseTable(t)
+  local rev = {}
+  for i=#t,1,-1 do
+    table.insert(rev, t[i])
+  end
+  return rev
+end
+
+function inTable(s, t)
+  for k, v in pairs(t) do
+    if v == s then
+      return k
+    end
+  end
+  return false
+end
+
+data:extend({
+{
+  type = "item-subgroup",
+  name = "mirrored",
+  group = "other",
+  order = "x"
+}
+})
+
 local mirrored = {}
-for i,list in pairs(data.raw) do
-  for name, recipe in pairs(list) do
-    if recipe.type == "recipe" and (recipe.ingredients and recipe.ingredients[1].type) or (recipe.results and recipe.results[1].type) then 
+local original = {}
+
+for i,recipe in pairs(data.raw["recipe"]) do
+    if  (type(recipe.ingredients) == "table" and recipe.ingredients[1] and recipe.ingredients[1].type) or 
+        (type(recipe.results) == "table" and recipe.results[1] and recipe.results[1].type) then 
       local keysIng = {}
       local keysRes = {}
       if recipe.ingredients and recipe.ingredients[1].type then
@@ -32,26 +49,33 @@ for i,list in pairs(data.raw) do
       end
       if #keysIng > 1 or #keysRes > 1 then
         local mirroredRecipe = util.table.deepcopy(recipe)
+        table.insert(original, recipe.name)
         mirroredRecipe.name = mirroredRecipe.name.."-mirrored"
-        mirroredRecipe.enabled = "true"
+        mirroredRecipe.subgroup = "mirrored"
         if #keysIng > 1 then
-          local ing = {}
-          for m=#mirroredRecipe.ingredients,1,-1 do
-            table.insert(ing, mirroredRecipe.ingredients[m])
-          end
-          mirroredRecipe.ingredients = ing
+          mirroredRecipe.ingredients = reverseTable(mirroredRecipe.ingredients)
         end
         if #keysRes > 1 then
-          local res = {}
-          for m=#mirroredRecipe.results,1,-1 do
-            table.insert(res, mirroredRecipe.results[m])
-          end
-          mirroredRecipe.results = res
+          mirroredRecipe.results = reverseTable(mirroredRecipe.results)
         end
-        --error(serpent.dump(mirroredRecipe))
         table.insert(mirrored, mirroredRecipe)
       end
     end
+end
+
+data:extend(mirrored)
+
+for i, tech in pairs(data.raw["technology"]) do
+  if type(tech.effects) == "table" then
+    local add = {}
+    for _, eff in pairs(tech.effects) do
+      local k = inTable(eff.recipe,original)
+      if eff.type == "unlock-recipe" and k then
+        table.insert(add, {type="unlock-recipe", recipe=eff.recipe.."-mirrored"})
+      end
+    end
+    for _, eff in pairs(add) do
+      table.insert(tech.effects, eff)
+    end
   end
 end
-data:extend(mirrored)

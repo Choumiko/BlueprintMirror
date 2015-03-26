@@ -5,5 +5,5 @@
   "author": "Choumiko",
   "contact": "www.factorioforums.com",
   "description": "Manipulate blueprints",
-  "dependencies": ["base > 0.11.14"]
+  "dependencies": ["base > 0.11.16"]
 } 
