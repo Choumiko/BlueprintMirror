@@ -409,6 +409,9 @@ remote.addinterface("bpmirror",
         if topui then
           topui.destroy()
         end
+        player.print("UI disabled")
+      else
+        player.print("UI enabled")
       end
       initGui(player)
     end,
