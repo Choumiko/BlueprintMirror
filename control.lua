@@ -28,34 +28,61 @@ replaceableEntities = {
     express = "express-splitter"
   }
 }
+
+function initGlob()
+  glob.settings = glob.settings or {}
+end
+
 function initGui(player)
+  if glob.settings[player.name] == nil then
+    glob.settings[player.name] = true
+  end
   if not player.force.technologies["automated-construction"].researched then
     return
   end
 
-  if not player.gui.top["blueprintMirror-button"] then
+  if not player.gui.top["blueprintMirror-button"] and glob.settings[player.name] then
     player.gui.top.add{type="button", name="blueprintMirror-button", caption="BPmirror"}
   end
 end
+
+function createCheckboxes(type, uiTable)
+  uiTable.add{type="label", caption=""}
+  uiTable.add{type="label", caption=""}
+  for k,v in pairs(replaceableEntities[type]) do
+    uiTable.add{type="checkbox", name=v.."-search"..type, caption=game.getlocalisedentityname(v), state=false}
+    uiTable.add{type="checkbox", name=v.."-replace"..type, state=false}
+  end
+end
+
 function expandGui(player)
   local frame = player.gui.left["blueprintMirror"];
   if (frame) then
     frame.destroy();
   else
     frame = player.gui.left.add{type="frame", name="blueprintMirror"}
-    frame.add{type="button", name="blueprintMirror-mirror", caption="mirror"}
-    --frame.add{type="button", name="blueprintMirror-replace", caption="replace"}
+    frame.add{type="button", name="blueprintMirror-mirror", caption={"text-mirror"}}
+    local tbl = frame.add{type="table", name="tbl", colspan=2}
+    tbl.add{type="label", caption={"text-search"}}
+    tbl.add{type="label", caption={"text-replace"}}
+    createCheckboxes("inserter",tbl)
+    createCheckboxes("belt",tbl)
+    createCheckboxes("splitter",tbl)
+    createCheckboxes("underground",tbl)
+    createCheckboxes("assembler",tbl)
+    tbl.add{type="button", name="blueprintMirror-replaceBtn", caption={"text-replace"}}
   end
 end
+
 game.oninit(function()
+  initGlob()
   for _, player in pairs(game.players) do
     initGui(player, false)
   end
 end)
+
 game.onload(function()
-  for _, player in pairs(game.players) do
-    initGui(player, false)
-  end
+  initGlob()
 end)
 
 game.onevent(defines.events.onplayercreated, function(event)
@@ -67,19 +94,6 @@ game.onevent(defines.events.onresearchfinished, function(event)
     for _, player in pairs(game.players) do
       initGui(player, true)
     end
-  end
-end)
-
-game.onevent(defines.events.onguiclick, function(event) 
-  local player = game.players[event.element.playerindex]
-  local element = event.element
-  if element.name == "blueprintMirror-mirror" then
-    remote.call("bpmirror", "mirror", player.name)
-    expandGui(player)
-  elseif element.name == "blueprintMirror-replace" then
-    
-  elseif element.name == "blueprintMirror-button" then
-    expandGui(player)
   end
 end)
 
@@ -106,8 +120,7 @@ BpMirror = {
     return blueprints
   end,
 
-  findSetupBlueprintInHotbar = function(name)
-    local player = getPlayerByName(name)
+  findSetupBlueprintInHotbar = function(player)
     local blueprints = BpMirror.findBlueprintsInHotbar(player)
     if blueprints ~= nil then
       for i, blueprint in ipairs(blueprints) do
@@ -117,7 +130,77 @@ BpMirror = {
       end
     end
   end,
+
+  findEmptyBlueprintInHotbar = function(player)
+    local blueprints = BpMirror.findBlueprintsInHotbar(player)
+    if blueprints ~= nil then
+      for i, blueprint in ipairs(blueprints) do
+        if not blueprint.isblueprintsetup() then
+          return blueprint
+        end
+      end
+    end
+  end
 }
+
+game.onevent(defines.events.onguiclick, function(event)
+  local player = game.players[event.element.playerindex]
+  local element = event.element
+  if element.name == "blueprintMirror-mirror" then
+    remote.call("bpmirror", "mirror", player.name)
+    expandGui(player)
+  elseif element.name == "blueprintMirror-replaceBtn" then
+    local rep = {}
+    local tbl = player.gui.left.blueprintMirror.tbl
+    local bp = BpMirror.findSetupBlueprintInHotbar(player)
+    local bpEmpty = BpMirror.findEmptyBlueprintInHotbar(player)
+    if bp and bpEmpty then
+      local ent = bp.getblueprintentities()
+      for type,x in pairs(replaceableEntities) do
+        local s = "-search"..type
+        local r = "-replace"..type
+        local tmp = {}
+        for _,name in pairs(tbl.childrennames) do
+          if name ~= "" and endsWith(name, type)then
+            local child = tbl[name]
+            if endsWith(name, s) and child.state then
+              tmp.s = string.sub(child.name,1,string.len(child.name)-string.len(s))
+            end
+            if endsWith(name, r) and child.state then
+              tmp.r = string.sub(child.name,1,string.len(child.name)-string.len(r))
+            end
+          end
+        end
+        if tmp.s and tmp.r then
+          rep[type] = {s=tmp.s, r=tmp.r}
+        end
+      end
+      for type, list in pairs(rep) do
+        ent = replaceRaw(ent,list.s,list.r)
+        --debugDump({game.localise(list.s),game.getlocalisedentityname(list.r)},true)
+        --local txt = {"", }
+        --player.print("Replaced "..game.localise(game.getlocalisedentityname(list.r)[1]))
+      end
+      bpEmpty.setblueprintentities(ent)
+      bpEmpty.blueprinticons = bp.blueprinticons
+      --debugDump(rep,true)
+      player.print("Replaced entities")
+      expandGui(player)
+      return
+    else
+      if not bp then
+        player.print("No blueprint found")
+        return
+      end
+      if not bpEmpty then
+        player.print("No empty blueprint found")
+        return
+      end
+    end
+  elseif element.name == "blueprintMirror-button" then
+    expandGui(player)
+  end
+end)
 
 function debugDump(var, force)
   if false or force then
@@ -169,6 +252,15 @@ function getPlayerByName(name)
   return game.players[id]
 end
 
+function replaceRaw(entities, s, r)
+  for _,ent in pairs(entities) do
+    if ent.name == s then
+      ent.name = r
+    end
+  end
+  return entities
+end
+
 function replace(entities, type, s, r)
   local n = entities
   if not replaceableEntities[type] then
@@ -182,12 +274,7 @@ function replace(entities, type, s, r)
   end
   local s = replaceableEntities[type][s]
   local r = replaceableEntities[type][r]
-  for _,ent in pairs(n) do
-    if ent.name == s then
-      ent.name = r
-    end
-  end
-  return n
+  return replaceRaw(entities,s,r)
 end
 
 function changeRecipe(entities, s, r)
@@ -264,69 +351,31 @@ end
 
 remote.addinterface("bpmirror",
   {
---    mirrorV = function(name)
---      local player = getPlayerByName(name)
---      if player then
---        local force = player.force
---        local bp = BpMirror.findSetupBlueprintInHotbar(name)
---        if bp then
---          local mir = mirror(bp.getblueprintentities(), "y")
---          mir = mirrorRecipes(mir, getMirroredRecipes(force))
---          bp.setblueprintentities(mir)
---        end
---      end
---    end,
+    --    mirrorV = function(name)
+    --      local player = getPlayerByName(name)
+    --      if player then
+    --        local force = player.force
+    --        local bp = BpMirror.findSetupBlueprintInHotbar(name)
+    --        if bp then
+    --          local mir = mirror(bp.getblueprintentities(), "y")
+    --          mir = mirrorRecipes(mir, getMirroredRecipes(force))
+    --          bp.setblueprintentities(mir)
+    --        end
+    --      end
+    --    end,
 
     mirror = function(name)
       local player = getPlayerByName(name)
       if player then
         local force = player.force
-        local bp = BpMirror.findSetupBlueprintInHotbar(name)
+        local bp = BpMirror.findSetupBlueprintInHotbar(player)
         if bp then
           local mir = mirror(bp.getblueprintentities(), "x")
           mir = mirrorRecipes(mir, getMirroredRecipes(force))
           bp.setblueprintentities(mir)
+        else
+          player.print("No blueprint found")
         end
-      end
-    end,
-
-    replaceBelts = function(s,r, name)
-      local belts = {"belt", "underground", "splitter"}
-      local bp = BpMirror.findSetupBlueprintInHotbar(name)
-      if bp then
-        local new = bp.getblueprintentities()
-        for _,t in pairs(belts) do
-          new = replace(new,t,s,r)
-          if type(new) == "table" then
-            bp.setblueprintentities(new)
-          else
-            printByName(name,new)
-          end
-        end
-      else
-        printByName(name,"No blueprint found")
-      end
-    end,
-
-    replaceInserters = function(s,r,name)
-      local bp = BpMirror.findSetupBlueprintInHotbar(name)
-      local ent = bp.getblueprintentities()
-      local new = replace(ent,"inserter",s,r)
-      if type(new) == "table" then
-        bp.setblueprintentities(new)
-      else
-        printByName(name,new)
-      end
-    end,
-
-    replaceAssemblers = function(s,r,name)
-      local bp = BpMirror.findSetupBlueprintInHotbar(name)
-      local ent = bp.getblueprintentities()
-      local new = replace(ent,"assembler",s,r)
-      if type(new) == "table" then
-        bp.setblueprintentities(new)
-      else
-        printByName(name,new)
       end
     end,
 
@@ -345,7 +394,27 @@ remote.addinterface("bpmirror",
       replaceableEntities[type][key] = name
     end,
 
+    toggleUI = function(name)
+      local player = getPlayerByName(name)
+      if glob.settings[player.name] == nil then
+        glob.settings[player.name] = true
+      end
+      glob.settings[player.name] = not glob.settings[player.name]
+      if not glob.settings[player.name] then
+        local topui = player.gui.top["blueprintMirror-button"]
+        local leftui = player.gui.left.blueprintMirror
+        if leftui then
+          leftui.destroy()
+        end
+        if topui then
+          topui.destroy()
+        end
+      end
+      initGui(player)
+    end,
+
     saveBP = function(name)
-      saveVar(BpMirror.findSetupBlueprintInHotbar(name).getblueprintentities())
+      local player = getPlayerByName(name)
+      saveVar(BpMirror.findSetupBlueprintInHotbar(player).getblueprintentities())
     end
   })
