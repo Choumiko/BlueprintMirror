@@ -1,36 +1,10 @@
 require "defines"
 
-replaceableEntities = {
-  inserter = {
-    basic = "basic-inserter",
-    fast  = "fast-inserter",
-    smart = "smart-inserter",
-    long = "long-handed-inserter"
-  },
-  assembler = {
-    am1 = "assembling-machine-1",
-    am2 = "assembling-machine-2",
-    am3 = "assembling-machine-3"
-  },
-  belt = {
-    basic = "basic-transport-belt",
-    fast = "fast-transport-belt",
-    express = "express-transport-belt"
-  },
-  underground = {
-    basic = "basic-transport-belt-to-ground",
-    fast = "fast-transport-belt-to-ground",
-    express = "express-transport-belt-to-ground"
-  },
-  splitter = {
-    basic = "basic-splitter",
-    fast = "fast-splitter",
-    express = "express-splitter"
-  }
-}
-
 function initGlob()
   glob.settings = glob.settings or {}
+  for _, player in pairs(game.players) do
+    initGui(player, false)
+  end
 end
 
 function initGui(player)
@@ -46,15 +20,6 @@ function initGui(player)
   end
 end
 
-function createCheckboxes(type, uiTable)
-  uiTable.add{type="label", caption=""}
-  uiTable.add{type="label", caption=""}
-  for k,v in pairs(replaceableEntities[type]) do
-    uiTable.add{type="checkbox", name=v.."-search"..type, caption=game.getlocalisedentityname(v), state=false}
-    uiTable.add{type="checkbox", name=v.."-replace"..type, state=false}
-  end
-end
-
 function expandGui(player)
   local frame = player.gui.left["blueprintMirror"];
   if (frame) then
@@ -62,23 +27,21 @@ function expandGui(player)
   else
     frame = player.gui.left.add{type="frame", name="blueprintMirror"}
     frame.add{type="button", name="blueprintMirror-mirror", caption={"text-mirror"}}
-    local tbl = frame.add{type="table", name="tbl", colspan=2}
+    local tbl = frame.add{type="table", name="tbl", colspan=3}
     tbl.add{type="label", caption={"text-search"}}
+    tbl.add{type="label", caption=" "}
     tbl.add{type="label", caption={"text-replace"}}
-    createCheckboxes("inserter",tbl)
-    createCheckboxes("belt",tbl)
-    createCheckboxes("splitter",tbl)
-    createCheckboxes("underground",tbl)
-    createCheckboxes("assembler",tbl)
+    for i=1,5 do
+      tbl.add{type="label", name="bpm-search"..i, caption="click with item"}
+      tbl.add{type="label", caption=" "}
+      tbl.add{type="label", name="bpm-replace"..i,  caption="click with item"}
+    end
     tbl.add{type="button", name="blueprintMirror-replaceBtn", caption={"text-replace"}}
   end
 end
 
 game.oninit(function()
   initGlob()
-  for _, player in pairs(game.players) do
-    initGui(player, false)
-  end
 end)
 
 game.onload(function()
@@ -149,6 +112,14 @@ game.onevent(defines.events.onguiclick, function(event)
   if element.name == "blueprintMirror-mirror" then
     remote.call("bpmirror", "mirror", player.name)
     expandGui(player)
+  elseif startsWith(element.name, "bpm-search") or startsWith(element.name, "bpm-replace") then
+    local item = player.cursorstack and player.cursorstack.name or false
+    if item then
+      element.caption = item
+    else
+      element.caption = "click with item"
+    end
+    return
   elseif element.name == "blueprintMirror-replaceBtn" then
     local rep = {}
     local tbl = player.gui.left.blueprintMirror.tbl
@@ -156,23 +127,23 @@ game.onevent(defines.events.onguiclick, function(event)
     local bpEmpty = BpMirror.findEmptyBlueprintInHotbar(player)
     if bp and bpEmpty then
       local ent = bp.getblueprintentities()
-      for type,x in pairs(replaceableEntities) do
-        local s = "-search"..type
-        local r = "-replace"..type
+      for i=1,5 do
+        local s = "-search"..i
+        local r = "-replace"..i
         local tmp = {}
         for _,name in pairs(tbl.childrennames) do
-          if name ~= "" and endsWith(name, type)then
+          if name ~= "" and startsWith(name, "bpm-search") or startsWith(name, "bpm-replace") then
             local child = tbl[name]
-            if endsWith(name, s) and child.state then
-              tmp.s = string.sub(child.name,1,string.len(child.name)-string.len(s))
+            if endsWith(name, s)  and child.caption ~= "click with item" then
+              tmp.s = child.caption
             end
-            if endsWith(name, r) and child.state then
-              tmp.r = string.sub(child.name,1,string.len(child.name)-string.len(r))
+            if endsWith(name, r) and child.caption ~= "click with item" then
+              tmp.r = child.caption
             end
           end
         end
         if tmp.s and tmp.r then
-          rep[type] = {s=tmp.s, r=tmp.r}
+          rep[i] = {s=tmp.s, r=tmp.r}
         end
       end
       for type, list in pairs(rep) do
@@ -199,6 +170,8 @@ game.onevent(defines.events.onguiclick, function(event)
     end
   elseif element.name == "blueprintMirror-button" then
     expandGui(player)
+  else
+    debugDump(element.name,true)
   end
 end)
 
@@ -335,6 +308,10 @@ function endsWith(s, e)
   return e=='' or string.sub(s,-string.len(e))==e
 end
 
+function startsWith(s, e)
+  return e == string.sub(s, 1, string.len(e))
+end
+
 function mirrorRecipes(entities, recipes)
   for _, ent in pairs(entities) do
     if ent.recipe and recipes[ent.recipe] then
@@ -351,18 +328,19 @@ end
 
 remote.addinterface("bpmirror",
   {
-    --    mirrorV = function(name)
-    --      local player = getPlayerByName(name)
-    --      if player then
-    --        local force = player.force
-    --        local bp = BpMirror.findSetupBlueprintInHotbar(name)
-    --        if bp then
-    --          local mir = mirror(bp.getblueprintentities(), "y")
-    --          mir = mirrorRecipes(mir, getMirroredRecipes(force))
-    --          bp.setblueprintentities(mir)
-    --        end
-    --      end
-    --    end,
+    createLocale = function()
+      local rec = {}
+      local str = "[recipe-name]\n"
+      for _,force in pairs(game.forces) do
+        local r = getMirroredRecipes(force)
+        for name, v in pairs(r) do
+          if endsWith(name, "-mirrored") then
+            rec[name] = game.localise(string.sub(name,1,string.len(name)-9))
+          end
+        end
+      end
+      debugDump(rec,true)
+    end,
 
     mirror = function(name)
       local player = getPlayerByName(name)

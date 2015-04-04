@@ -42,5 +42,5 @@ for _, force in pairs(game.forces) do
         force.recipes[k.."-mirrored"].enabled = true
       end
     end
-  end 
+  end
 end
