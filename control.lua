@@ -1,5 +1,7 @@
 require "defines"
 
+toReplace = {}
+
 function initGlob()
   glob.settings = glob.settings or {}
   for _, player in pairs(game.players) do
@@ -7,15 +9,15 @@ function initGlob()
   end
 end
 
-function initGui(player)
+function initGui(player, force)
   if glob.settings[player.name] == nil then
     glob.settings[player.name] = true
   end
-  if not player.force.technologies["automated-construction"].researched then
+  if not player.force.technologies["automated-construction"].researched and not force then
     return
   end
 
-  if not player.gui.top["blueprintMirror-button"] and glob.settings[player.name] then
+  if not player.gui.top["blueprintMirror-button"] and (glob.settings[player.name] or force) then
     player.gui.top.add{type="button", name="blueprintMirror-button", caption="BPmirror"}
   end
 end
@@ -26,15 +28,14 @@ function expandGui(player)
     frame.destroy();
   else
     frame = player.gui.left.add{type="frame", name="blueprintMirror"}
-    frame.add{type="button", name="blueprintMirror-mirror", caption={"text-mirror"}}
-    local tbl = frame.add{type="table", name="tbl", colspan=3}
+    local tbl = frame.add{type="table", name="tbl", colspan=2}
+    tbl.add{type="button", name="blueprintMirror-mirror", caption={"text-mirror"}}
+    tbl.add{type="checkbox", name="bpm-copy", caption="copy", state=false}
     tbl.add{type="label", caption={"text-search"}}
-    tbl.add{type="label", caption=" "}
     tbl.add{type="label", caption={"text-replace"}}
     for i=1,5 do
-      tbl.add{type="label", name="bpm-search"..i, caption="click with item"}
-      tbl.add{type="label", caption=" "}
-      tbl.add{type="label", name="bpm-replace"..i,  caption="click with item"}
+      local b1 = tbl.add{type="button", name="bpm-search"..i, caption="", style="bpm_button"}
+      local b2 = tbl.add{type="button", name="bpm-replace"..i,  caption="", style="bpm_button"}
     end
     tbl.add{type="button", name="blueprintMirror-replaceBtn", caption={"text-replace"}}
   end
@@ -110,14 +111,37 @@ game.onevent(defines.events.onguiclick, function(event)
   local player = game.players[event.element.playerindex]
   local element = event.element
   if element.name == "blueprintMirror-mirror" then
-    remote.call("bpmirror", "mirror", player.name)
+    local force = player.force
+    local bp = BpMirror.findSetupBlueprintInHotbar(player)
+    if bp then
+      local mir = mirror(bp.getblueprintentities(), "x")
+      mir = mirrorRecipes(mir, getMirroredRecipes(force))
+      local bpEmpty = BpMirror.findEmptyBlueprintInHotbar(player)
+      if player.gui.left.blueprintMirror.tbl["bpm-copy"].state then
+        if bpEmpty then
+          bpEmpty.setblueprintentities(mir)
+          bpEmpty.blueprinticons = bp.blueprinticons
+        else
+          player.print("No empty blueprint for copying")
+        end
+      else
+        bp.setblueprintentities(mir)
+      end
+    else
+      player.print("No blueprint found")
+    end
     expandGui(player)
   elseif startsWith(element.name, "bpm-search") or startsWith(element.name, "bpm-replace") then
     local item = player.cursorstack and player.cursorstack.name or false
+    if not toReplace[player.name] then
+      toReplace[player.name] = {}
+    end
     if item then
-      element.caption = item
+      toReplace[player.name][element.name] = item
+      element.caption = game.localise(game.getlocaliseditemname(item)[1])
     else
-      element.caption = "click with item"
+      toReplace[player.name][element.name] = nil
+      element.caption = ""
     end
     return
   elseif element.name == "blueprintMirror-replaceBtn" then
@@ -127,23 +151,25 @@ game.onevent(defines.events.onguiclick, function(event)
     local bpEmpty = BpMirror.findEmptyBlueprintInHotbar(player)
     if bp and bpEmpty then
       local ent = bp.getblueprintentities()
-      for i=1,5 do
-        local s = "-search"..i
-        local r = "-replace"..i
-        local tmp = {}
-        for _,name in pairs(tbl.childrennames) do
-          if name ~= "" and startsWith(name, "bpm-search") or startsWith(name, "bpm-replace") then
-            local child = tbl[name]
-            if endsWith(name, s)  and child.caption ~= "click with item" then
-              tmp.s = child.caption
-            end
-            if endsWith(name, r) and child.caption ~= "click with item" then
-              tmp.r = child.caption
+      local repl = toReplace[player.name]
+      if type(repl) == "table" then
+        for i=1,5 do
+          local s = "-search"..i
+          local r = "-replace"..i
+          local tmp = {}
+          for btn, name in pairs(repl) do
+            if name ~= "" and startsWith(btn, "bpm-search") or startsWith(btn, "bpm-replace") then
+              if endsWith(btn, s) then
+                tmp.s = name
+              end
+              if endsWith(btn, r) then
+                tmp.r = name
+              end
             end
           end
-        end
-        if tmp.s and tmp.r then
-          rep[i] = {s=tmp.s, r=tmp.r}
+          if tmp.s and tmp.r then
+            rep[i] = {s=tmp.s, r=tmp.r}
+          end
         end
       end
       for type, list in pairs(rep) do
@@ -170,8 +196,6 @@ game.onevent(defines.events.onguiclick, function(event)
     end
   elseif element.name == "blueprintMirror-button" then
     expandGui(player)
-  else
-    debugDump(element.name,true)
   end
 end)
 
